@@ -1,0 +1,887 @@
+// Copyright 2014 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+include "audio_config.fbs";
+include "components.fbs";
+include "motive.fbs";
+include "particles.fbs";
+include "pie_noon_common.fbs";
+include "scoring_rules.fbs";
+
+namespace fpl.pie_noon;
+
+enum Orientation : ushort {
+  Vertical,
+  Horizontal
+}
+
+enum PieDeflectionMode : ushort {
+  ToTargetOfTarget,
+  ToSource,
+  ToRandom
+}
+
+enum ButtonId : ushort {
+  Undefined,
+  InvalidInput,
+  Cancel,
+  Left,
+  Right,
+  Attack,
+  Defend,
+  MenuStart,
+  MenuSignIn,
+  MenuSignInText,
+  MenuExtras,
+  MenuLicense,
+  MenuAchievements,
+  MenuLeaderboard,
+  MenuHowToPlay,
+  MenuResume,
+  MenuAbout,
+  MenuBack,
+  MenuMultiScreen,
+  MenuMultiScreenHost,
+  MenuMultiScreenJoin,
+  MenuCardboard,
+  MenuGameModes,
+  Counter1,
+  Counter2,
+  Counter3,
+  Counter4,
+  Counter5,
+  Multiplayer_Button1,
+  Multiplayer_Button2,
+  Multiplayer_Button3,
+  Multiplayer_Button4,
+  Multiplayer_Look,
+  Multiplayer_Go,
+  Multiplayer_NumPlayers,
+  Multiplayer_Label1,
+  Multiplayer_Label2,
+  Multiplayer_Label3,
+  Multiplayer_Label4,
+  Multiplayer_Splat1,
+  Multiplayer_Splat2,
+  Multiplayer_Splat3,
+  Multiplayer_Splat4,
+  Multiplayer_SplatFull,
+}
+
+// Setting a button to Hold means it will fire as long
+// as it is held down.  Setting it to Press means it will
+// only fire when it goes down, and will not fire again until
+// after it has been released.
+enum ButtonEvent : ushort (bit_flags) {
+  ButtonPress,
+  ButtonUp,
+  ButtonHold
+}
+
+enum GameMode : ushort {
+  // Game ends when one player is left standing.
+  Survival,
+
+  // Game is over when timer runs down, highest score wins.
+  HighScore,
+
+  // First player to reach a certain score wins.
+  ReachTarget
+}
+
+table ButtonTexture {
+  standard : string;
+  touch_screen : string;
+}
+
+// Used for defining zones for the touch controller.
+// the touch screen, (1, 1) is the lower right.  ButtonId is what input
+// action should be associated with touching that zone.
+// texture_normal and texture_down show which textures are used to represent
+// the touch-zone in its normal state and when it's being pressed.
+table ButtonDef {
+  // Identifier for each button.  Should be unique across the UIGroup.
+  ID : ButtonId;
+
+  // These are used to demarcate the zone boundaries,
+  // Coordinate values can range from 0-1.  (0,0) represents the upper
+  // left corner of the touch screen, (1, 1) is lower right.
+  top_left : Vec2;
+  bottom_right : Vec2;
+
+  // Material to display for the touch zone, both in its normal
+  // state, and when it is registering a press.
+  texture_normal : [ButtonTexture];
+  texture_pressed : ButtonTexture;
+  texture_selected : string;
+  draw_scale_normal : Vec2;
+  draw_scale_pressed : Vec2;
+  draw_scale_highlighted : Vec2;
+  shader : string;
+  inactive_shader : string;
+
+  // IDs of other buttons, that we can navigate to from this one, via d-pad.
+  // IDs are tried in order until one is found that is visible.
+  nav_up : [ButtonId];
+  nav_down : [ButtonId];
+  nav_left : [ButtonId];
+  nav_right : [ButtonId];
+
+  // Position to draw the texture at:
+  // (Designates the center of the texture, and like the zone boundaries, is
+  // expressed as a fraction of the screen width/height.)
+  texture_position : Vec2;
+
+  // does this button start out active?
+  starts_active : bool = true;
+
+  // When this button triggers.  (See enum for description)
+  event_trigger : ButtonEvent = ButtonPress;
+}
+
+table StaticImageDef {
+  ID : ButtonId;
+  texture : [ButtonTexture];
+  shader : string;
+  draw_scale : Vec2;
+  texture_position : Vec2;
+  z_depth : float = -0.5;
+  visible : bool = true;
+  render_after_buttons : bool = false;
+}
+
+// Used for imggui defining GUI components.
+// These are game specific definitions and parsed in the game code.
+enum GroupLayout : ushort  {
+  GroupLayoutHorizontalTop,
+  GroupLayoutHorizontalCenter,
+  GroupLayoutHorizontalBottom,
+  GroupLayoutVerticalLeft,
+  GroupLayoutVerticalCenter,
+  GroupLayoutVerticalRight,
+}
+
+// User defined widget that has background image and oscillating image on it.
+table ImguiButtonDef {
+  // Identifier for each widget.  Should be unique across the UIGroup.
+  ID : ButtonId;
+  size : float;
+  margin : Vec4;
+
+  // Material to display for the touch zone, both in its normal
+  // state, and when it is registering a press.
+  texture_foreground : string;
+  texture_background : string;
+  foreground_position : Vec2;
+  foreground_size_pressed : float;
+  foreground_size_focus : float = 1.0;
+  foreground_size : float;
+  draw_scale_normal : Vec2;
+  draw_scale_pressed : Vec2;
+  event_trigger : ButtonEvent = ButtonPress;
+  button_id : string;
+}
+
+table StartGroupDef {
+  // Identifier for each widget.  Should be unique across the UIGroup.
+  ID : ButtonId;
+  layout : GroupLayout = GroupLayoutHorizontalCenter;
+  size : float;
+  margin : Vec4;
+  texture_background : string;
+}
+
+table EndGroupDef {
+  // Identifier for each widget.  Should be unique across the UIGroup.
+  ID : ButtonId;
+}
+
+union ImguiWidgetUnion {
+  StartGroupDef, ImguiButtonDef, EndGroupDef
+}
+
+table ImguiWidget {
+  // Type of the widget.
+  data : ImguiWidgetUnion;
+}
+
+table UiGroup {
+  allow_controller_navigation : bool;
+  starting_selection : ButtonId;
+  button_list : [ButtonDef];
+  static_image_list : [StaticImageDef];
+  cannonical_window_height : int;
+  default_shader : string;
+  default_inactive_shader: string;
+
+  imgui_list : [ImguiWidget];
+}
+
+table FixedAccessory {
+  // Location for the splatter texture to appear.
+  location:Vec2i;
+
+  // Size of the splatter texture. 1 is size as authored, >1 is bigger, <1 is
+  // smaller.
+  scale:Vec2;
+
+  // Which renderable should be used for this splotch.
+  renderable:RenderableId;
+}
+
+table AccessoryGroup {
+  // Indices into an array of FixedAccessory's.
+  indices:[byte];
+}
+
+table CharacterData {
+  // Where the character should be placed in the world.
+  position:Vec3;
+
+  // 1 if left turns clockwise, -1 if left turns counter-clockwise.
+  // Intuitive controls depend on layout of surrounding characters.
+  left_jump:int;
+
+  // TODO: Add color here?
+}
+
+table CardboardFigure {
+  // The id used around the game to describe what needs to be rendered.
+  // The things we render in our scene are simple. They all can be described
+  // by the data structure here.
+  id:RenderableId;
+
+  // Material for the front of the cardboard cutout.
+  cardboard_front:string;
+
+  // Material for the inside surface of the cardboard cutout. That is, showing
+  // the corrugations.
+  cardboard_back:string;
+
+  // Horizontal displacement of the renderable. Used to keep the characters
+  // centered around the stick that props them up, while keeping the stick
+  // stationary.
+  offset:Vec3;
+
+  // Optionally specify bounding box around geometry.
+  // x-coordinate is width. y-coordinate is height.
+  // Texture origin is at the bottom, in the middle, so
+  //   bottom: 0
+  //   top: pixel_bounds.y
+  //   left: -pixel_bounds.x / 2
+  //   right: pixel_bounds.x / 2
+  // If left as the default nullptr, bounding box is ignored.
+  pixel_bounds:Vec2i;
+
+  // Scale the cardboard geometry. We convert from pixel-size to world-size by
+  // multiplying geometry_scale * pixel_to_world_scale (see below).
+  geometry_scale:float = 1.0;
+
+  // True if the renderable should have a popsicle stick propping it up.
+  stick:bool = false;
+
+  // True if the renderable should cast shadows.
+  shadow:bool = false;
+
+  // True if renderable is made of cardboard (has the cardboard normalmap).
+  cardboard:bool = false;
+
+  // Offset to the splatter accessories, in pixels.
+  splatter_offset:Vec2i;
+
+  // Offset to health accessories (i.e. hearts), in pixels.
+  health_offset:Vec2i;
+}
+
+// Each arrangement should have it a unique number of players How many people
+// are playing determines the arrangement to use.
+table CharacterArrangement {
+  character_data:[CharacterData];
+}
+
+table CameraMovementToSubject {
+  // Percent of camera position to take from subject position.
+  // e.g. If (0.5, 0.5, 0.5), half the subject position is used.
+  position_from_subject:Vec3;
+
+  // Percent of camera position to take from the base camera position.
+  // The base camera position is set by 'camera_position' in Config.
+  position_from_base:Vec3;
+
+  // Percent of camera target to take from subject position.
+  target_from_subject:Vec3;
+
+  // Percent of camera target to take from the base camera target.
+  // The base camera target is set by 'camera_target' in Config.
+  target_from_base:Vec3;
+
+  // Start speed we move towards the target position. Higher values indicate
+  // sudden movement, as though you've been hit by something. In percent/tick,
+  // where percent is from 0~1.
+  start_velocity:float;
+
+  // Time to move from current position to the target.
+  time:int;
+
+  // Parameterization of the magnet.
+  def:motive.SmoothParameters;
+}
+
+table TurnLengthSpec {
+  // Turns take this many seconds...
+  turn_seconds:int;
+
+  // ...until this turn number (inclusive, starting at 1).
+  // Specify -1 for the last turn length spec.
+  // Example: [ { 5, 2}, {4, 7}, {3, 15}, {2, 30}, {1, -1} ]
+  until_turn_number:int;
+}
+
+table MultiscreenOptions {
+  // Lengths of each turn.
+  turn_length:[TurnLengthSpec];
+  // Extra time to wait at the end of each turn for all the messages
+  // to come in.
+  network_grace_milliseconds:int;
+  // How long to wait before the first turn starts. Must be > 0.
+  first_turn_delay_milliseconds:int;
+  // How long after each turn to start the next turn. Should be enough time
+  // for all of the actions to resolve. Must be > 0.
+  start_turn_delay_milliseconds:int;
+  // How long to wait before throwing pie.
+  pie_delay_milliseconds:int;
+  // How long to wait before starting to block.
+  block_delay_milliseconds:int;
+  // How long to hold the block for.
+  block_hold_milliseconds:int;
+  // Extra amount to delay for each character after the 0th, so they aren't
+  // all perfectly in sync.
+  char_delay_milliseconds:int;
+  // How long to wait before showing a larger pie.
+  grow_delay_milliseconds:int;
+
+  // Whether the host should automatically accept connections.
+  auto_connect_on_host:bool;
+
+  // Whether clients should automatically connect to the first host.
+  auto_connect_on_client:bool;
+
+  // Whether hosts and clients should broadcast the user's Google Play Games
+  // name when hosting or connecting to multiplayer games. If this is false,
+  // it will use the device name instead (the same behavior as when the user
+  // is simply not signed into Google Play Games).
+  use_full_name_as_instance_name:bool;
+
+  // What "Service ID" to broadcast the game under using the NearbyConnections
+  // library.
+  nearby_connections_service_id:string;
+
+  // App identifiers to broadcast via NearbyConnections library.
+  nearby_connections_app_identifiers:[string];
+
+  // Max number of players who are allowed to connect to the host.
+  max_players:ushort;
+
+  // AI constants for multi-screen mode.
+  // Enable AI in multi-screen games at all?
+  ai_enabled:bool;
+
+  // AI action percentages. Whatever is left over will just do the same
+  // thing the AI did the previous turn.
+  // Chance each turn (0-1) that the AI will throw a pie.
+  ai_chance_to_throw:float;
+  // Chance each turn (0-1) that the AI will block.
+  ai_chance_to_block:float;
+  // Chance each turn (0-1) that the AI will wait / grow pie.
+  ai_chance_to_wait:float;
+
+  // Aiming percentages. Whatever is left over is the chance of keeping
+  // the current target.
+  // Chance each turn to target the opponent with the largest pie.
+  ai_chance_to_target_largest_pie:float;
+  // Chance each turn to target the opponent with the fewest HP.
+  ai_chance_to_target_lowest_health:float;
+  // Chance each turn to target the opponent with the most HP.
+  ai_chance_to_target_highest_health:float;
+  // Chance each turn to target a random opponent.
+  ai_chance_to_target_random:float;
+
+  // splat an enemy's buttons when you do this much damage to them
+  light_splat_damage_threshold:float;
+  light_splat_num_buttons:int;
+
+  // heavily splat an enemy's buttons when you do this much damage to them
+  heavy_splat_damage_threshold:float;
+  heavy_splat_num_buttons:int;
+
+  // Starting scale for the splats, they scale down to regular scale.
+  splat_start_scale:float;
+  // Speed they scale down.
+  splat_scale_speed:float;
+  // Speed they drip down.
+  splat_drip_speed:float;
+}
+
+table Config {
+
+  // List of all entities that we spawn automatically at game start.
+  entity_list:[EntityDefinition];
+
+  // Definition for characters on the stage.
+  character_scene_object:EntityDefinition;
+
+  // The size of the ground plane that makes the stage
+  ground_plane_width:float;
+  ground_plane_depth:float;
+
+  // Definition for splatters that appear on background props:
+  splatter_def:EntityDefinition;
+
+  // Values for the size and location of splatters when they appear on
+  // background props:
+  splatter_range_min:Vec3;
+  splatter_range_max:Vec3;
+  splatter_scale_min:float;
+  splatter_scale_max:float;
+
+  // Square of the radius for how close shakeable props need to be to
+  // a pie hit in order to receive a splatter.
+  splatter_radius_squared:float;
+
+  // Temporary variable to control number of players until we can configure it
+  // from in the game
+  character_count:uint;
+
+  // Different configurations of players.
+  character_arrangements:[CharacterArrangement];
+
+  // Number of players to start assigned to keyboard control:
+  number_of_keyboard_controllers:uint;
+
+  // Character primary colors.
+  character_colors:[Vec3];
+
+  // Color to draw AIs.
+  ai_color:Vec3;
+
+  // This modulates the primary colors
+  character_global_brightness_factor:float;
+
+  // This modulates the primary colors for buttons
+  character_global_brightness_factor_buttons:float;
+
+  // Scoring rules.
+  scoring_rules:ScoringRules;
+
+  // Audio engine configuration.
+  audio:pindrop.AudioConfig;
+
+  // Where the camera should be positioned.
+  camera_position:Vec3;
+
+  // Where the camera should be pointed at.
+  camera_target:Vec3;
+
+  // The positions of the light sources.
+  light_positions:[Vec3];
+
+  // Controls the end game victory and loss conditions.
+  game_mode:GameMode;
+
+  // How much health a player has. Some pies may do more damage than others.
+  // Only used in Survival mode.
+  character_health:int;
+
+  // How long the game should run. Only used in HighScore mode.
+  game_time:int;
+
+  // First player to reach this score wins the game. Only used in ReachTarget
+  // mode.
+  target_score:int;
+
+  // How long it takes for a pie to reach it's target. Note that this is not
+  // the same as speed; throwing a pie at someone diagonal to you will take the
+  // same amount of time as throwing a pie at someone adjacent to you.
+  pie_flight_time:int;
+
+  // The height of the pie arc when thrown.
+  pie_arc_height:float;
+
+  // Randomly adjusts how high the pie is thrown. e.g. A value of 2 would mean
+  // the pie could have any height between `pie_height - 2` to `pie_height + 2`
+  // with equal probability.
+  pie_arc_height_variance:float;
+
+  // The height of the pie at the start (and end) of it's arc.
+  pie_initial_height:float;
+
+  // The number of in-air spins the pie should have.
+  pie_rotations:int;
+
+  // Randomly adjusts how much the pie spins in the air. e.g. A value of 2
+  // would mean the pie could have any whole number of rotations between
+  // `pie_rotations - 2` to `pie_rotations + 2` with equal probability.
+  pie_rotation_variance:int;
+
+  // The initial angle of the pie when thrown, in degrees.
+  pie_initial_angle:float;
+
+  // The target angle of the pie when landing, in degrees.
+  pie_target_angle:float;
+
+  // Where the pie should be directed when deflected.
+  pie_deflection_mode:PieDeflectionMode;
+
+  // When pie is deflected, the amount of damage the pie will inflict is
+  // changed by this amount. This allows the pies to shrink and eventually
+  // disappear (if the value is negative).
+  pie_damage_change_when_deflected:int;
+
+  // The minimum duration a frame can last regardless of how fast the
+  // processor is. In ms.
+  // For example, if 10ms, game cannot go faster than 100Hz. The game won't
+  // look much smoother or play better at faster frame rates. We'll just be
+  // hogging the CPU.
+  min_update_time:int;
+
+  // The maximum duration a frame can last regardless of how slow the
+  // processor is. In ms.
+  // For example, if 100ms, game cannot jump more than 100ms in one simulation
+  // update. If we're debugging, or a task switch happens, we'll get
+  // super-large update times that we'd rather just ignore.
+  max_update_time:int;
+
+  // Defines the turning speed and wobble of the character's face angle, when
+  // changing targets.
+  face_angle_def:motive.OvershootParameters;
+  face_angle_twitch:motive.Settled1fParameters;
+  face_angle_twitch_velocity:float;
+
+  // Defines the angle that characters will tilt away from when looking
+  // directly at the camera. In degrees.
+  tilt_away_angle:float;
+
+  // Defines the movement of pies that count-down during the "join" state.
+  // The pies gradually disappear one at a time to give the appearance of a
+  // timer.
+  join_motivator_def:motive.OvershootParameters;
+  join_motivator_start_value:float;
+  join_motivator_target_value:float;
+  join_motivator_start_velocity:float;
+
+  // Number of pies to show in the "Join" animation. Make sure they
+  // are present in the menu screen.
+  join_number_of_pies:ushort;
+
+  // Map airborne pie damage to the renderable id of the pie.
+  renderable_id_for_pie_damage:[RenderableId];
+
+  // Map pie damage to a sound ID.
+  hit_sound_id_for_pie_damage:[string];
+  // Map pie damage to a blocked / deflected sound ID.
+  blocked_sound_id_for_pie_damage:[string];
+
+  // Defines how props shake when nearby characters are damaged.
+  motivator_specifications:[motive.OvershootParameters];
+
+  // Maximum velocity that is added to the prop shake. In radians per tick.
+  prop_shake_velocity:float;
+
+  // For each damage done to a character, shake the props by this percent of
+  // the maximum velocity above.
+  prop_shake_percent_per_damage:float;
+
+  // The farther a prop is from the damage, the less it shakes. This value
+  // controls the amount that distance affects the shake. The bigger the
+  // value, the less distance matters.
+  prop_shake_identity_distance_sq:float;
+
+  // Any time a character takes this amount of damage or more, the camera will
+  // move.
+  camera_move_on_damage_min_damage:int;
+
+  // Defines the animation of the camera towards the target when a character is
+  // hit by a big pie.
+  camera_move_on_damage:CameraMovementToSubject;
+
+  // Defines the animation of the camera back to its base position after we've
+  // finished zooming in on a character hit by a big pie.
+  camera_move_to_base:CameraMovementToSubject;
+
+  // After the game is finished, minimal time before we can reset and start
+  // playing again. In ms.
+  play_finished_timeout:int;
+
+  // Rendering constants.
+  //
+  // Size of the target screen. In pixels.
+  window_size:Vec2i;
+
+  // Name of the target window. Used on desktop platforms.
+  window_title:string;
+
+  // Field of view angle for the camera.
+  viewport_angle:float;
+
+  // Objects closer than the near plane are clipped.
+  viewport_near_plane:float;
+
+  // Object farther than the far plane are culled.
+  viewport_far_plane:float;
+
+  // Constant conversion from texture to world space.
+  pixel_to_world_scale:float;
+
+  // The depth of the front plane. Negative means nearer.
+  cardboard_front_z_offset:float;
+
+  // The depth of the back plane (with the corrugations).
+  cardboard_back_z_offset:float;
+
+  // The distance in front of the character of the first accessory.
+  accessory_z_offset:float;
+
+  // The distance added to each successive accessory, so that the accessories
+  // don't overlap.
+  accessory_z_increment:float;
+
+  // Keep the cardboard cutouts facing the stage front.
+  // Bigger numbers increase the effect. A number of 1 eliminates all effect.
+  cardboard_bias_towards_stage_front:float;
+
+  // Cardboard lighting properties:
+  cardboard_ambient_material:Vec3;
+  cardboard_diffuse_material:Vec3;
+  cardboard_specular_material:Vec3;
+  cardboard_shininess:float;
+  cardboard_normalmap_scale:float;
+
+  // The vertical offset of the popsicle stick prop.
+  stick_y_offset:float;
+
+  // The depth of the front of the popsicle stick from the front of the
+  // cardboard.
+  stick_front_z_offset:float;
+
+  // The depth of the back of the popsicle stick from the back of the cardboard.
+  // Should be bigger than stick_z_offset, and smaller than
+  // cardboard_back_z_offset.
+  stick_back_z_offset:float;
+
+  // Material for the front of the stick. The cutouts are mounted on the stick.
+  stick_front:string;
+
+  // Material for the inside of the stick. Rendered similar to
+  // 'cardboard_back'.
+  stick_back:string;
+
+  stick_bounds:Vec2;
+
+  // Spinning material displayed on the loading screen
+  loading_material:string;
+  // Logo displayed on the loading screen.
+  loading_logo:string;
+  // Minimum time (in milliseconds) to display the loading screen.
+  min_loading_time:int;
+  // Material used to render full screen to fade from loading screen.
+  fade_material:string;
+  // Length of time (in milliseconds) of fades between game states.
+  // This *must* be greater than zero.
+  full_screen_fade_time:int;
+
+  // Offset of UI arrow from the character. Z is forward. X is side. Y is up.
+  ui_arrow_offset:Vec3;
+
+  // Scale of UI arrow from it's authored size. Z is length. X is width.
+  ui_arrow_scale:Vec3;
+
+  // Map damage to sets of accessories. That is splatter_map[damage] is the set
+  // indices into splatter_accessories[] that should be rendered when the
+  // character has taken 'damage' amount of damage.
+  splatter_map:[AccessoryGroup];
+
+  // Where splatter splotches should appear on a character. One splotch appears
+  // per point of damage taken.
+  splatter_accessories:[FixedAccessory];
+
+  // Map health to sets of accessories. That is, health_map[health] is the set
+  // of indices into health_accessories[] that should be rendered when the
+  // character has 'health' remaining.
+  health_map:[AccessoryGroup];
+
+  // Where hearts should appear on a character. One heart appears per point of
+  // health remaining.
+  health_accessories:[FixedAccessory];
+
+  // Describe the model for each item that can be rendered.
+  // Array of length RenderableId_Count.
+  renderables:[CardboardFigure];
+
+  // Definition for pie splatter particles:
+  pie_splatter_def:fpl.ParticleDef;
+  pie_noon_particles_per_damage:int;
+
+  // Confetti for the victor.
+  confetti_def:fpl.ParticleDef;
+
+  // How much confetti to spawn when they press buttons.
+  joining_confetti_count:int;
+
+  // Burst of confetti when you join.
+  joining_confetti_def:fpl.ParticleDef;
+
+  // Description of centering bar used during Cardboard mode
+  cardboard_center_material:string;
+  cardboard_center_scale:Vec2;
+  cardboard_center_color:Vec4;
+
+  // In world UI elements used in Cardboard mode
+  // Scale (0-1) between the player and their target
+  target_reticle_distance:float;
+  // Height of the reticle
+  target_reticle_height:float;
+  // Offset of the player's current pie size
+  cardboard_pie_offset:Vec3;
+  // The scale of the player's current pie size
+  cardboard_pie_scale:Vec3;
+  // Offset of the player's current health
+  cardboard_health_offset:Vec3;
+  // Scale to use for the player's arrow in the X direction
+  cardboard_arrow_scale:float;
+
+  // AI options
+  // Variance for how long AI players go without acting:
+  ai_minimum_time_between_actions:int;
+  ai_maximum_time_between_actions:int;
+
+  // Chance (0-1) that they'll block a pie flung at them, if able.
+  ai_chance_to_block:float;
+
+  // Chance (0-1) that they'll change who they're aiming at when they act.
+  ai_chance_to_change_aim:float;
+
+  // Chance (0-1) that they'll throw their pie when they act.
+  ai_chance_to_throw:float;
+
+  // Duration range (in milliseconds) that the AI will block for if threatened.
+  ai_block_min_duration:int;
+  ai_block_max_duration:int;
+
+  // UI options
+  //
+  // Button layouts:
+  touchscreen_zones:UiGroup;
+  pause_screen_buttons:UiGroup;
+  title_screen_buttons_android:UiGroup;
+  title_screen_buttons_non_android:UiGroup;
+  extras_screen_buttons:UiGroup;
+  join_screen_buttons:UiGroup;
+  msx_screen_buttons:UiGroup;
+  msx_pleasewait_screen_buttons:UiGroup;
+  // 5 versions of the "waiting for players" menu, with 0-4 players connected.
+  msx_waitingforplayers_screen_buttons:UiGroup;
+  msx_waitingforplayers1_screen_buttons:UiGroup;
+  msx_waitingforplayers2_screen_buttons:UiGroup;
+  msx_waitingforplayers3_screen_buttons:UiGroup;
+  msx_waitingforplayers4_screen_buttons:UiGroup;
+  msx_searching_screen_buttons:UiGroup;
+  msx_connecting_screen_buttons:UiGroup;
+  msx_waitingforgame_screen_buttons:UiGroup;
+  msx_cant_host_game_screen_buttons:UiGroup;
+  msx_all_players_disconnected_screen_buttons:UiGroup;
+  msx_host_disconnected_screen_buttons:UiGroup;
+  msx_connection_lost_screen_buttons:UiGroup;
+  multiplayer_host:UiGroup;
+  multiplayer_client:UiGroup;
+  cardboard_screen_buttons:UiGroup;
+  game_modes_screen_buttons:UiGroup;
+
+  // Tutorial
+  //
+  // List of materials to display, one after the other, on the full screen.
+  tutorial_slides:[string];
+
+  // Scale every material above by (tutorial_aspect_ratio, 1). Lets the textures
+  // be squished into the nearest power of two size, even if that changes the
+  // aspect ratio.
+  tutorial_aspect_ratio:float;
+
+  // Loading is done on the fly. The slides take up a lot of memory, so we only
+  // want to have the current, the next, and maybe one or two more textures
+  // loading at a time. Recall that loading is done asynchronously.
+  tutorial_num_future_slides_to_load:int;
+
+  // Total time to fade out on current slide and fade back in on next slide.
+  tutorial_fade_time:int;
+
+  // List of materials to display, one after the other, on the full screen,
+  // for multiscreen mode's "How to Play".
+  multiscreen_tutorial_slides:[string];
+
+  // Scale every material above by (tutorial_aspect_ratio, 1). Lets the textures
+  // be squished into the nearest power of two size, even if that changes the
+  // aspect ratio.
+  multiscreen_tutorial_aspect_ratio:float;
+
+  // Debug options
+  //
+  // Put the characters into the scene description.
+  draw_characters:bool;
+
+  // Put the targeting arrows into the scene description.
+  draw_ui_arrows:bool;
+
+  // Put the airborne pies into the scene description.
+  draw_pies:bool;
+
+  // Put the environment into the scene description.
+  draw_props:bool;
+
+  // Put a series of objects along the positive x, y, and z axes.
+  draw_axes:bool;
+
+  // Draw all character renderables in a line.
+  draw_character_lineup:bool;
+
+  // Draw splatters and hearts of lineup characters. Does nothing unless
+  // draw_character_lineup is true.
+  draw_lineup_accessories:bool;
+
+  // Continuously draw this renderable at the origin. Useful for debugging one
+  // renderable.
+  draw_fixed_renderable:RenderableId;
+
+  // When button pressed, how far to translate the camera in the world.
+  button_to_camera_translation_scale:Vec3;
+
+  // Translate mouse movement to camera rotation in the world.
+  mouse_to_camera_rotation_scale:float;
+
+  // Move the camera when mouse buttons are pressed.
+  allow_camera_movement:bool;
+
+  // Print out character states whenever a transition happens.
+  print_character_states:bool;
+
+  // Print out pie movement when they are airborne.
+  print_pie_states:bool;
+
+  // Print out the camera position or target whenever they change.
+  print_camera_orientation:bool;
+
+  // Options for multiscreen mode.
+  multiscreen_options:MultiscreenOptions;
+}
+
+root_type Config;
